@@ -15,7 +15,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex="https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):\d+",
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://second-brain-os.vercel.app",       # Vercel production
+    ],
+    allow_origin_regex=r"https://second-brain-os.*\.vercel\.app",  # Vercel previews
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
