@@ -1,16 +1,27 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, notes, upload, search, summarize, knowledge_graph, daily_briefing, transcribe
 from database import engine
 import models
 
-# Auto-create all tables on startup
-models.Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Auto-create all tables on startup — wrapped in try/except
+    # so a DB hiccup doesn't crash the entire serverless function
+    try:
+        models.Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Warning: Could not create tables on startup: {e}")
+    yield
+
 
 app = FastAPI(
     title="Second Brain OS API",
     description="AI-Powered Digital Memory Layer — store, organise and retrieve your knowledge.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -18,7 +29,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://second-brain-os.vercel.app",       # Vercel production
+        "https://second-brain-os.vercel.app",       # Vercel frontend production
     ],
     allow_origin_regex=r"https://second-brain-os.*\.vercel\.app",  # Vercel previews
     allow_credentials=True,
