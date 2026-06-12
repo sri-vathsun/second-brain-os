@@ -1,6 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
-import httpx
 import crud
 import schemas
 import models
@@ -25,23 +24,16 @@ async def upload_file(
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             text = "".join(page.get_text() for page in doc)
         except ImportError:
-            raise HTTPException(
-                status_code=503,
-                detail="PDF parsing library not installed. Run: pip install PyMuPDF",
-            )
+            # Fallback: try to extract raw text from PDF bytes
+            text = file_bytes.decode("utf-8", errors="ignore")
+            if len(text.strip()) < 20:
+                raise HTTPException(
+                    status_code=503,
+                    detail="PDF parsing library not available on this server.",
+                )
 
         note = schemas.NoteCreate(title=file.filename or "Uploaded PDF", content=text)
         db_note = crud.create_note(db=db, note=note, user_id=current_user.id)
-
-        # Best-effort AI embedding
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.post(
-                    "http://localhost:8001/add",
-                    json={"note_id": str(db_note.id), "text": text},
-                )
-        except Exception:
-            pass
 
         return {
             "filename": file.filename,

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import models
-import requests
+from ai_engine import find_similar_notes_by_text
 
 # This is a simplified implementation of a forgetting curve model.
 # In a real-world scenario, this would be a more sophisticated algorithm.
@@ -37,28 +37,14 @@ def get_notes_for_review(db: Session, user_id: int, strength_threshold: float = 
 
 def get_smart_suggestions(db: Session, note: models.Note, user_id: int):
     """
-    Find related notes using the AI search service.
+    Find related notes using keyword-based similarity (no external AI service needed).
     """
     try:
-        response = requests.post(
-            "http://127.0.0.1:8001/search",
-            json={"query": note.title, "n_results": 3},
-            timeout=2.0
+        all_notes = (
+            db.query(models.Note)
+            .filter(models.Note.user_id == user_id, models.Note.id != note.id)
+            .all()
         )
-        response.raise_for_status()
-        search_results = response.json()
-        
-        # Extract note IDs from search results
-        if search_results and 'ids' in search_results and search_results['ids']:
-            suggested_note_ids = [int(id_str) for id_str in search_results['ids'][0] if int(id_str) != note.id]
-            
-            # Fetch the actual notes from the database
-            suggested_notes = db.query(models.Note).filter(
-                models.Note.id.in_(suggested_note_ids),
-                models.Note.user_id == user_id
-            ).all()
-            return suggested_notes
-    except requests.exceptions.RequestException:
-        return [] # Return empty list if AI service fails
-    
-    return []
+        return find_similar_notes_by_text(all_notes, note.title, n_results=3)
+    except Exception:
+        return []

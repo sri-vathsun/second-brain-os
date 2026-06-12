@@ -12,7 +12,9 @@ __pycache__/
 *$py.class
 venv/
 .env
+.env.backup
 .pytest_cache/
+*.db
 
 # Docker
 .docker/
