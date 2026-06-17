@@ -6,54 +6,51 @@ interface Props {
   onNewNote?: () => void;
 }
 
-// Tell TypeScript about the browser Speech API
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
-  }
-}
-
 export default function VoiceRecorder({ onNewNote }: Props) {
   const [state, setState] = useState<"idle" | "recording" | "saving" | "done" | "error">("idle");
-  const [liveText, setLiveText]     = useState("");   // shown while recording
-  const [finalText, setFinalText]   = useState("");   // accumulated confirmed words
-  const [statusMsg, setStatusMsg]   = useState("");
-  const [supported, setSupported]   = useState(true);
+  const [liveText, setLiveText]   = useState("");
+  const [finalText, setFinalText] = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
+  const [supported, setSupported] = useState(true);
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const finalTextRef   = useRef("");                  // ref so onstop closure sees latest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+  const finalTextRef   = useRef("");
   const onNewNoteRef   = useRef(onNewNote);
   onNewNoteRef.current = onNewNote;
 
-  // Check browser support once on mount
   useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) setSupported(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w.SpeechRecognition && !w.webkitSpeechRecognition) {
+      setSupported(false);
+    }
   }, []);
 
   const startRecording = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
-      setStatusMsg("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+      setStatusMsg("Speech recognition not supported. Please use Chrome or Edge.");
       setState("error");
       return;
     }
 
     const recognition = new SR();
-    recognition.continuous      = true;   // keep listening until we call .stop()
-    recognition.interimResults  = true;   // show words as they're spoken
-    recognition.lang            = "en-US";
-    recognitionRef.current = recognition;
+    recognition.continuous     = true;
+    recognition.interimResults = true;
+    recognition.lang           = "en-US";
+    recognitionRef.current     = recognition;
 
-    // Reset state
     setLiveText("");
     setFinalText("");
     finalTextRef.current = "";
     setStatusMsg("");
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      let interim   = "";
       let confirmed = finalTextRef.current;
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -70,21 +67,19 @@ export default function VoiceRecorder({ onNewNote }: Props) {
       setLiveText(interim);
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (event: any) => {
       const msg =
         event.error === "not-allowed"
-          ? "Microphone access denied. Please allow mic access in your browser."
+          ? "Microphone access denied. Allow mic access in browser settings."
           : event.error === "no-speech"
-          ? "No speech detected. Please speak clearly and try again."
+          ? "No speech detected. Speak clearly and try again."
           : `Error: ${event.error}. Please try again.`;
       setStatusMsg(msg);
       setState("error");
     };
 
-    recognition.onend = () => {
-      // onend fires after .stop() — do nothing here; saving is handled by stopRecording
-    };
-
+    recognition.onend = () => { /* handled in stopRecording */ };
     recognition.start();
     setState("recording");
   };
@@ -93,19 +88,18 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     recognitionRef.current?.stop();
     setState("saving");
 
-    // Give the browser 400 ms to fire the final onresult before we read the ref
+    // Give browser 400 ms to fire final onresult
     await new Promise((r) => setTimeout(r, 400));
 
     const text = finalTextRef.current.trim();
     if (!text) {
-      setStatusMsg("Nothing was transcribed. Please speak louder and try again.");
+      setStatusMsg("Nothing transcribed. Please speak louder and try again.");
       setState("error");
       return;
     }
 
-    // Save directly to the Notes endpoint — no AI backend call needed
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    const title  = `Voice Note — ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const title = `Voice Note — ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 
     try {
       const res = await fetch(
@@ -119,14 +113,12 @@ export default function VoiceRecorder({ onNewNote }: Props) {
           body: JSON.stringify({ title, content: text }),
         }
       );
-
       if (!res.ok) throw new Error("Failed to save note");
-
-      setStatusMsg(`✅ Saved as "${title}"`);
+      setStatusMsg(`✅ Saved: "${title}"`);
       setState("done");
       onNewNoteRef.current?.();
     } catch {
-      setStatusMsg("Transcribed successfully but failed to save. Check your connection.");
+      setStatusMsg("Transcribed but failed to save. Check your connection.");
       setState("error");
     }
   };
@@ -139,14 +131,11 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     setStatusMsg("");
   };
 
-  // ── Unsupported browser message ───────────────────────────────────────────
   if (!supported) {
     return (
       <div className="glass" style={{ padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
-        <h2 style={{ fontWeight: 800, fontSize: 20, marginBottom: 8 }}>
-          Browser Not Supported
-        </h2>
+        <h2 style={{ fontWeight: 800, fontSize: 20, marginBottom: 8 }}>Browser Not Supported</h2>
         <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
           Voice Memos require Chrome or Edge. Please open this page in one of those browsers.
         </p>
@@ -154,10 +143,10 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     );
   }
 
-  const btnSize = 80;
-  const isRecording  = state === "recording";
-  const isSaving     = state === "saving";
-  const isIdle       = state === "idle";
+  const btnSize    = 80;
+  const isRecording = state === "recording";
+  const isSaving    = state === "saving";
+  const isIdle      = state === "idle";
 
   return (
     <div
@@ -178,7 +167,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         Speak your thoughts — they&apos;ll be transcribed live and saved as a note instantly.
       </p>
 
-      {/* ── Mic button ─────────────────────────────────────────────────────── */}
+      {/* Mic button */}
       <div style={{ position: "relative" }}>
         {isRecording && (
           <div
@@ -188,7 +177,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
               borderRadius: "50%",
               border: "3px solid rgba(239,68,68,0.5)",
               animation: "recordPulse 1.5s ease-in-out infinite",
-              pointerEvents: "none",   /* ← FIX: don't intercept button clicks */
+              pointerEvents: "none", /* ← never intercept button clicks */
             }}
           />
         )}
@@ -210,6 +199,8 @@ export default function VoiceRecorder({ onNewNote }: Props) {
               ? "0 0 40px rgba(239,68,68,0.5)"
               : "0 0 40px var(--accent-glow)",
             color: "#fff",
+            position: "relative", /* ensure button is above ring */
+            zIndex: 1,
           }}
           onMouseEnter={(e) => { (e.currentTarget.style.transform = "scale(1.08)"); }}
           onMouseLeave={(e) => { (e.currentTarget.style.transform = "scale(1)"); }}
@@ -218,7 +209,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         </button>
       </div>
 
-      {/* ── Wave bars while recording ────────────────────────────────────── */}
+      {/* Wave bars */}
       {isRecording && (
         <div style={{ display: "flex", gap: 5, alignItems: "center", height: 40 }}>
           {[...Array(11)].map((_, i) => (
@@ -237,7 +228,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         </div>
       )}
 
-      {/* ── Live transcript box ──────────────────────────────────────────── */}
+      {/* Live transcript */}
       {(isRecording || isSaving) && (
         <div
           style={{
@@ -256,22 +247,20 @@ export default function VoiceRecorder({ onNewNote }: Props) {
           {finalText && <span>{finalText} </span>}
           {liveText  && <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{liveText}</span>}
           {!finalText && !liveText && (
-            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
-              Start speaking…
-            </span>
+            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Start speaking…</span>
           )}
         </div>
       )}
 
-      {/* ── Status text ─────────────────────────────────────────────────── */}
+      {/* Status */}
       <div
         style={{
           fontSize: 14,
           fontWeight: 500,
           color:
-            state === "error"  ? "var(--danger)"
-            : state === "done" ? "var(--success)"
-            : state === "saving" ? "var(--accent-cyan)"
+            state === "error"   ? "var(--danger)"
+            : state === "done"  ? "var(--success)"
+            : state === "saving"? "var(--accent-cyan)"
             : "var(--text-secondary)",
         }}
       >
@@ -281,7 +270,6 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         {(state === "done" || state === "error") && statusMsg}
       </div>
 
-      {/* ── Record another button ────────────────────────────────────────── */}
       {(state === "done" || state === "error") && (
         <button className="btn-ghost" onClick={reset}>
           Record Another
