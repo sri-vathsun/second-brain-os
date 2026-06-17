@@ -188,6 +188,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
               borderRadius: "50%",
               border: "3px solid rgba(239,68,68,0.5)",
               animation: "recordPulse 1.5s ease-in-out infinite",
+              pointerEvents: "none",   /* ← FIX: don't intercept button clicks */
             }}
           />
         )}
