@@ -31,6 +31,7 @@ _origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://second-brain-os.vercel.app",
+    "https://second-brain-os-ecru.vercel.app",
 ] + [o.strip() for o in _extra_origins if o.strip()]
 
 app.add_middleware(

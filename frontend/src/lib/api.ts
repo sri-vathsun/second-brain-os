@@ -1,8 +1,38 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// How long to wait before aborting a request (ms)
+const REQUEST_TIMEOUT_MS = 15_000;
+
+// Maximum retries for network errors (not HTTP errors)
+const MAX_RETRIES = 2;
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("token");
+}
+
+/**
+ * Determines a user-friendly error message from a raw fetch error.
+ */
+function getNetworkErrorMessage(err: unknown): string {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Request timed out. The server took too long to respond. Please try again.";
+  }
+  if (err instanceof TypeError) {
+    // This is the classic "Failed to fetch" — means the server is unreachable
+    return "Unable to connect to the server. Please make sure the backend is running and try again.";
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return "An unexpected network error occurred. Please try again.";
+}
+
+/**
+ * Sleep helper for retry backoff.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -13,12 +43,48 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(err.detail || "Request failed");
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Create an AbortController for timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        // HTTP error (4xx / 5xx) — don't retry these
+        const err = await res.json().catch(() => ({ detail: "Request failed" }));
+        throw new Error(err.detail || `Request failed with status ${res.status}`);
+      }
+
+      return await res.json();
+    } catch (err: unknown) {
+      clearTimeout(timeout);
+
+      // If it's an HTTP-level error (our own Error thrown above), don't retry
+      if (err instanceof Error && !(err instanceof TypeError) && !(err instanceof DOMException)) {
+        throw err;
+      }
+
+      lastError = err;
+
+      // Only retry on network/timeout errors, not on the last attempt
+      if (attempt < MAX_RETRIES) {
+        await sleep(500 * (attempt + 1)); // 500ms, 1000ms backoff
+      }
+    }
   }
-  return res.json();
+
+  // All retries exhausted — throw a user-friendly error
+  throw new Error(getNetworkErrorMessage(lastError));
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -103,15 +169,31 @@ export const api = {
     const token = getToken();
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${API_URL}/upload/upload`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: "Upload failed" }));
-      throw new Error(err.detail || "Upload failed");
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000); // 30s for uploads
+
+    try {
+      const res = await fetch(`${API_URL}/upload/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+        throw new Error(err.detail || "Upload failed");
+      }
+      return res.json();
+    } catch (err: unknown) {
+      clearTimeout(timeout);
+      if (err instanceof Error && !(err instanceof TypeError) && !(err instanceof DOMException)) {
+        throw err;
+      }
+      throw new Error(getNetworkErrorMessage(err));
     }
-    return res.json();
   },
 };
