@@ -75,14 +75,14 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
             if response.status_code == 200:
                 result = response.json()
                 return result.get("text", "")
-            print(
-                f"Hugging Face transcription failed ({response.status_code}): "
-                f"{response.text[:500]}"
-            )
-            return ""
+            error_detail = response.text[:500]
+            print(f"Hugging Face transcription failed ({response.status_code}): {error_detail}")
+            raise RuntimeError(f"Hugging Face returned {response.status_code}: {error_detail}")
+    except RuntimeError:
+        raise
     except Exception as error:
         print(f"Hugging Face transcription request failed: {error}")
-        return ""
+        raise RuntimeError("Could not connect to the transcription provider") from error
 
 
 # ─── Embeddings (simple keyword-based for deployment) ─────────────────────────

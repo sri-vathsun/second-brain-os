@@ -16,7 +16,10 @@ async def transcribe_and_create_note(
     db: Session = Depends(get_db),
 ):
     audio_bytes = await file.read()
-    transcribed_text = await transcribe_audio(audio_bytes)
+    try:
+        transcribed_text = await transcribe_audio(audio_bytes)
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
     if not transcribed_text:
         raise HTTPException(
