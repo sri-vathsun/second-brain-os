@@ -47,7 +47,9 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     return () => {
       processorRef.current?.disconnect();
       sourceRef.current?.disconnect();
-      audioContextRef.current?.close();
+      if (audioContextRef.current?.state !== "closed") {
+        void audioContextRef.current?.close();
+      }
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -90,8 +92,11 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     try {
       processorRef.current.disconnect();
       sourceRef.current.disconnect();
-      await audioContext.close();
+      if (audioContext.state !== "closed") await audioContext.close();
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      audioContextRef.current = null;
+      processorRef.current = null;
+      sourceRef.current = null;
       const samples = samplesRef.current;
       const length = samples.reduce((total, chunk) => total + chunk.length, 0);
       if (length === 0) throw new Error("No audio captured. Please speak and try again.");
