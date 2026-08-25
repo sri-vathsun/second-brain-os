@@ -6,128 +6,129 @@ interface Props {
   onNewNote?: () => void;
 }
 
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index));
+  };
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+  for (let index = 0; index < samples.length; index++) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
 export default function VoiceRecorder({ onNewNote }: Props) {
   const [state, setState] = useState<"idle" | "recording" | "saving" | "done" | "error">("idle");
-  const [liveText, setLiveText]   = useState("");
-  const [finalText, setFinalText] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
-  const [supported, setSupported] = useState(true);
+  const supported = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
-  const finalTextRef   = useRef("");
-  const onNewNoteRef   = useRef(onNewNote);
-  onNewNoteRef.current = onNewNote;
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const samplesRef = useRef<Float32Array[]>([]);
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    if (!w.SpeechRecognition && !w.webkitSpeechRecognition) {
-      setSupported(false);
-    }
+    return () => {
+      processorRef.current?.disconnect();
+      sourceRef.current?.disconnect();
+      audioContextRef.current?.close();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
-  const startRecording = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) {
-      setStatusMsg("Speech recognition not supported. Please use Chrome or Edge.");
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      streamRef.current = stream;
+      audioContextRef.current = audioContext;
+      sourceRef.current = source;
+      processorRef.current = processor;
+      samplesRef.current = [];
+      processor.onaudioprocess = (event) => {
+        samplesRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      };
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      setStatusMsg("");
+      setState("recording");
+    } catch (error) {
+      const message = error instanceof DOMException && error.name === "NotAllowedError"
+        ? "Microphone access denied. Allow mic access in browser settings."
+        : "Could not access your microphone. Check that it is connected and try again.";
+      setStatusMsg(message);
       setState("error");
-      return;
     }
-
-    const recognition = new SR();
-    recognition.continuous     = true;
-    recognition.interimResults = true;
-    recognition.lang           = "en-US";
-    recognitionRef.current     = recognition;
-
-    setLiveText("");
-    setFinalText("");
-    finalTextRef.current = "";
-    setStatusMsg("");
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      let interim   = "";
-      let confirmed = finalTextRef.current;
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          confirmed += (confirmed ? " " : "") + text.trim();
-        } else {
-          interim = text;
-        }
-      }
-
-      finalTextRef.current = confirmed;
-      setFinalText(confirmed);
-      setLiveText(interim);
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onerror = (event: any) => {
-      const msg =
-        event.error === "not-allowed"
-          ? "Microphone access denied. Allow mic access in browser settings."
-          : event.error === "no-speech"
-          ? "No speech detected. Speak clearly and try again."
-          : `Error: ${event.error}. Please try again.`;
-      setStatusMsg(msg);
-      setState("error");
-    };
-
-    recognition.onend = () => { /* handled in stopRecording */ };
-    recognition.start();
-    setState("recording");
   };
 
   const stopRecording = async () => {
-    recognitionRef.current?.stop();
+    const audioContext = audioContextRef.current;
+    if (!audioContext || !sourceRef.current || !processorRef.current) return;
+
     setState("saving");
-
-    // Give browser 400 ms to fire final onresult
-    await new Promise((r) => setTimeout(r, 400));
-
-    const text = finalTextRef.current.trim();
-    if (!text) {
-      setStatusMsg("Nothing transcribed. Please speak louder and try again.");
-      setState("error");
-      return;
-    }
-
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    const title = `Voice Note — ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    setStatusMsg("");
 
     try {
+      processorRef.current.disconnect();
+      sourceRef.current.disconnect();
+      await audioContext.close();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      const samples = samplesRef.current;
+      const length = samples.reduce((total, chunk) => total + chunk.length, 0);
+      if (length === 0) throw new Error("No audio captured. Please speak and try again.");
+      const merged = new Float32Array(length);
+      let offset = 0;
+      for (const chunk of samples) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const recording = encodeWav(merged, audioContext.sampleRate);
+
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("file", recording, "voice-memo.wav");
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/notes/notes`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/transcribe`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ title, content: text }),
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
         }
       );
-      if (!res.ok) throw new Error("Failed to save note");
-      setStatusMsg(`✅ Saved: "${title}"`);
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.detail || "Transcription failed");
+      }
+      setStatusMsg("Voice memo transcribed and saved.");
       setState("done");
-      onNewNoteRef.current?.();
-    } catch {
-      setStatusMsg("Transcribed but failed to save. Check your connection.");
+      onNewNote?.();
+    } catch (error) {
+      setStatusMsg(error instanceof Error ? error.message : "Could not transcribe the recording. Please try again.");
       setState("error");
     }
   };
 
   const reset = () => {
     setState("idle");
-    setLiveText("");
-    setFinalText("");
-    finalTextRef.current = "";
     setStatusMsg("");
   };
 
@@ -164,7 +165,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
     >
       <h2 style={{ fontWeight: 800, fontSize: 22 }}>🎤 Voice Memo</h2>
       <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 380 }}>
-        Speak your thoughts — they&apos;ll be transcribed live and saved as a note instantly.
+      Record your thoughts — they&apos;ll be transcribed and saved as a note.
       </p>
 
       {/* Mic button */}
@@ -228,30 +229,6 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         </div>
       )}
 
-      {/* Live transcript */}
-      {(isRecording || isSaving) && (
-        <div
-          style={{
-            width: "100%",
-            minHeight: 80,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid var(--glass-border)",
-            borderRadius: "var(--radius-md)",
-            padding: "14px 16px",
-            textAlign: "left",
-            fontSize: 14,
-            lineHeight: 1.7,
-            color: "var(--text-primary)",
-          }}
-        >
-          {finalText && <span>{finalText} </span>}
-          {liveText  && <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{liveText}</span>}
-          {!finalText && !liveText && (
-            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Start speaking…</span>
-          )}
-        </div>
-      )}
-
       {/* Status */}
       <div
         style={{
@@ -265,7 +242,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
         }}
       >
         {isIdle      && "Click the mic to start recording"}
-        {isRecording && "Listening… click ⏹ to stop and save"}
+        {isRecording && "Recording… click ⏹ to transcribe and save"}
         {isSaving    && "Saving your note…"}
         {(state === "done" || state === "error") && statusMsg}
       </div>

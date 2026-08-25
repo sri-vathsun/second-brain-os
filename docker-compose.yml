@@ -1,23 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=Sigma
-      - POSTGRES_DB=secondbrain
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     build: 
       context: ./backend
@@ -25,14 +8,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:Sigma@postgres:5432/secondbrain
+      - DATABASE_URL=postgresql://postgres:ta%23qK%24ugX%3FSKPy9@db.emxpmyotsjbwrgxbtudy.supabase.co:5432/postgres
       - SECRET_KEY=second-brain-secret-key-change-in-production-32chars!
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=10080
       - AI_SERVICE_URL=http://ai-services:8001
     depends_on:
-      postgres:
-        condition: service_healthy
       ai-services:
         condition: service_started
 
@@ -58,6 +39,5 @@ services:
       - backend
 
 volumes:
-  postgres_data:
   ai_models:
   chroma_data:

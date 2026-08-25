@@ -7,14 +7,15 @@ Falls back gracefully when the HF API is rate-limited or down.
 import os
 import httpx
 from typing import List, Optional
+from config import settings
 
-HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_API_URL = "https://api-inference.huggingface.co/models"
+HF_API_TOKEN = settings.hf_api_token
+HF_API_URL = "https://router.huggingface.co/hf-inference/models"
 
 # Models used (all free via HF Inference API)
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SUMMARIZATION_MODEL = "facebook/bart-large-cnn"
-TRANSCRIPTION_MODEL = "openai/whisper-tiny.en"
+TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo"
 
 
 def _hf_headers() -> dict:
@@ -74,8 +75,13 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
             if response.status_code == 200:
                 result = response.json()
                 return result.get("text", "")
+            print(
+                f"Hugging Face transcription failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
             return ""
-    except Exception:
+    except Exception as error:
+        print(f"Hugging Face transcription request failed: {error}")
         return ""
 
 
