@@ -5,6 +5,13 @@ import { api, Note } from "@/lib/api";
 
 interface Props { onNoteSelect?: (note: Note) => void; }
 
+function parseBackendDate(dateStr: string): Date {
+  // Backend returns naive UTC datetimes (no timezone suffix).
+  // Treat them as UTC to avoid local-time offset issues.
+  const hasTimezone = /[zZ]|[+\-]\d{2}:?\d{2}$/.test(dateStr);
+  return new Date(hasTimezone ? dateStr : `${dateStr}Z`);
+}
+
 export default function NotesList({ onNoteSelect }: Props) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [filtered, setFiltered] = useState<Note[]>([]);
@@ -69,7 +76,7 @@ export default function NotesList({ onNoteSelect }: Props) {
 
   const timeAgo = (dateStr: string | null) => {
     if (!dateStr) return "";
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = Date.now() - parseBackendDate(dateStr).getTime();
     const m = Math.floor(diff / 60000);
     if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60);

@@ -5,6 +5,11 @@ import { api, Note } from "@/lib/api";
 
 interface Props { note: Note; onClose: () => void; }
 
+function parseBackendDate(dateStr: string): Date {
+  const hasTimezone = /[zZ]|[+\-]\d{2}:?\d{2}$/.test(dateStr);
+  return new Date(hasTimezone ? dateStr : `${dateStr}Z`);
+}
+
 export default function NoteView({ note, onClose }: Props) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +49,7 @@ export default function NoteView({ note, onClose }: Props) {
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{note.title}</h2>
             <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-              {note.created_at ? new Date(note.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Unknown date"}
+              {note.created_at ? parseBackendDate(note.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Unknown date"}
               {" · "}{note.review_count} reviews
             </p>
           </div>
