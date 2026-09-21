@@ -19,18 +19,19 @@ async def upload_file(
 
     if "pdf" in content_type:
         try:
-            import fitz  # PyMuPDF
+            from io import BytesIO
+            from pypdf import PdfReader
 
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            text = "".join(page.get_text() for page in doc)
-        except ImportError:
-            # Fallback: try to extract raw text from PDF bytes
-            text = file_bytes.decode("utf-8", errors="ignore")
-            if len(text.strip()) < 20:
-                raise HTTPException(
-                    status_code=503,
-                    detail="PDF parsing library not available on this server.",
-                )
+            reader = PdfReader(BytesIO(file_bytes))
+            text = "\n\n".join(page.extract_text() or "" for page in reader.pages).strip()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not read PDF: {exc}") from exc
+
+        if not text:
+            raise HTTPException(
+                status_code=422,
+                detail="No selectable text found in this PDF. Scanned PDFs need OCR before upload.",
+            )
 
         note = schemas.NoteCreate(title=file.filename or "Uploaded PDF", content=text)
         db_note = crud.create_note(db=db, note=note, user_id=current_user.id)
