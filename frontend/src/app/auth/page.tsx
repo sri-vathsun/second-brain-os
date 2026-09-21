@@ -151,6 +151,11 @@ function AuthForm() {
                 value={form.password} required minLength={6}
                 onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
             </div>
+            {mode === "login" && (
+              <a href="/auth/forgot-password" style={{ color: "var(--accent-cyan)", fontSize: 13, textAlign: "right" }}>
+                Forgot password?
+              </a>
+            )}
 
             {error && (
               <div style={{

@@ -62,6 +62,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       if (!res.ok) {
         // HTTP error (4xx / 5xx) — don't retry these
         const err = await res.json().catch(() => ({ detail: "Request failed" }));
+        if (res.status === 401 && token && typeof window !== "undefined") {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          window.location.assign("/auth");
+        }
         throw new Error(err.detail || `Request failed with status ${res.status}`);
       }
 
@@ -132,6 +137,18 @@ export const api = {
 
   login: (data: { email: string; password: string }) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(data) }),
+
+  forgotPassword: (email: string) =>
+    request<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    }),
 
   getMe: () => request<User>("/auth/me"),
 
