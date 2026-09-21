@@ -1,4 +1,6 @@
 import bcrypt
+import hashlib
+import secrets
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional
@@ -36,3 +38,11 @@ def decode_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def create_password_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_password_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

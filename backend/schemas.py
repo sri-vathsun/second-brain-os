@@ -31,6 +31,15 @@ class Token(BaseModel):
     user: UserOut
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 # ─── Notes ───────────────────────────────────────────────────────────────────
 
 class NoteBase(BaseModel):

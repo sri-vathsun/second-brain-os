@@ -18,6 +18,20 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     notes = relationship("Note", back_populates="owner", cascade="all, delete-orphan")
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    user = relationship("User", back_populates="password_reset_tokens")
 
 
 class Note(Base):
