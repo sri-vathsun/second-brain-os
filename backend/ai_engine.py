@@ -2,11 +2,14 @@
 
 import asyncio
 import httpx
+import logging
 import tempfile
 from pathlib import Path
 from threading import Lock
 
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 HF_API_TOKEN = settings.hf_api_token
 HF_API_URL = "https://router.huggingface.co/hf-inference/models"
@@ -103,6 +106,7 @@ def _transcribe_local(audio_bytes: bytes) -> str:
     except RuntimeError:
         raise
     except Exception as error:
+        logger.exception("Local Whisper transcription failed")
         raise RuntimeError("Local transcription failed. Please try recording again.") from error
     finally:
         if temporary_path is not None:
