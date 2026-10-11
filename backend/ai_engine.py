@@ -1,12 +1,11 @@
-"""
-Lightweight AI engine that uses Hugging Face Inference API.
-No heavy local ML models — runs on Render free tier (512 MB RAM).
-Falls back gracefully when the HF API is rate-limited or down.
-"""
+"""AI helpers for summarization, transcription, and note similarity."""
 
-import os
+import asyncio
 import httpx
-from typing import List, Optional
+import tempfile
+from pathlib import Path
+from threading import Lock
+
 from config import settings
 
 HF_API_TOKEN = settings.hf_api_token
@@ -15,7 +14,10 @@ HF_API_URL = "https://router.huggingface.co/hf-inference/models"
 # Models used (all free via HF Inference API)
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SUMMARIZATION_MODEL = "facebook/bart-large-cnn"
-TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo"
+LOCAL_TRANSCRIPTION_MODEL = "tiny.en"
+
+_transcriber = None
+_transcriber_lock = Lock()
 
 
 def _hf_headers() -> dict:
@@ -63,26 +65,53 @@ def _fallback_summary(text: str) -> str:
 
 # ─── Transcription ────────────────────────────────────────────────────────────
 
-async def transcribe_audio(audio_bytes: bytes) -> str:
-    """Transcribe audio bytes using HF Whisper API."""
+def _get_local_transcriber():
+    """Load the local Whisper model once, on the first transcription request."""
+    global _transcriber
+    if _transcriber is None:
+        with _transcriber_lock:
+            if _transcriber is None:
+                try:
+                    from faster_whisper import WhisperModel
+
+                    _transcriber = WhisperModel(
+                        LOCAL_TRANSCRIPTION_MODEL,
+                        device="cpu",
+                        compute_type="int8",
+                    )
+                except Exception as error:
+                    raise RuntimeError(
+                        "Local transcription is unavailable. "
+                        "Install backend requirements and retry."
+                    ) from error
+    return _transcriber
+
+
+def _transcribe_local(audio_bytes: bytes) -> str:
+    if not audio_bytes:
+        raise RuntimeError("The recording was empty. Please record again.")
+
+    temporary_path = None
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{HF_API_URL}/{TRANSCRIPTION_MODEL}",
-                headers={**_hf_headers(), "Content-Type": "audio/webm"},
-                content=audio_bytes,
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("text", "")
-            error_detail = response.text[:500]
-            print(f"Hugging Face transcription failed ({response.status_code}): {error_detail}")
-            raise RuntimeError(f"Hugging Face returned {response.status_code}: {error_detail}")
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
+            audio_file.write(audio_bytes)
+            temporary_path = Path(audio_file.name)
+
+        model = _get_local_transcriber()
+        segments, _ = model.transcribe(str(temporary_path), beam_size=5)
+        return " ".join(segment.text.strip() for segment in segments).strip()
     except RuntimeError:
         raise
     except Exception as error:
-        print(f"Hugging Face transcription request failed: {error}")
-        raise RuntimeError("Could not connect to the transcription provider") from error
+        raise RuntimeError("Local transcription failed. Please try recording again.") from error
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+async def transcribe_audio(audio_bytes: bytes) -> str:
+    """Transcribe audio locally without Hugging Face hosted inference credits."""
+    return await asyncio.to_thread(_transcribe_local, audio_bytes)
 
 
 # ─── Embeddings (simple keyword-based for deployment) ─────────────────────────
