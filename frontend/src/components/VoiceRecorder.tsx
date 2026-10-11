@@ -1,93 +1,109 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { api } from "@/lib/api";
 
 interface Props {
   onNewNote?: () => void;
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  const writeString = (offset: number, value: string) => {
-    for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index));
-  };
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  for (let index = 0; index < samples.length; index++) {
-    const sample = Math.max(-1, Math.min(1, samples[index]));
-    view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: (() => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
   }
-  return new Blob([buffer], { type: "audio/wav" });
 }
 
 export default function VoiceRecorder({ onNewNote }: Props) {
   const [state, setState] = useState<"idle" | "recording" | "saving" | "done" | "error">("idle");
   const [statusMsg, setStatusMsg] = useState("");
-  const supported = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
-
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const samplesRef = useRef<Float32Array[]>([]);
+  const supported = typeof window !== "undefined" &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const transcriptRef = useRef("");
+  const stoppingRef = useRef(false);
 
   useEffect(() => {
     return () => {
-      processorRef.current?.disconnect();
-      sourceRef.current?.disconnect();
-      if (audioContextRef.current?.state !== "closed") {
-        void audioContextRef.current?.close();
-      }
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      recognitionRef.current?.stop();
     };
   }, []);
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const saveTranscript = async () => {
+    const transcript = transcriptRef.current.trim();
+    if (!transcript) throw new Error("No speech detected. Please speak clearly and try again.");
+    await api.createNote({ title: "Voice Note", content: transcript });
+    setStatusMsg("Voice memo transcribed and saved.");
+    setState("done");
+    onNewNote?.();
+  };
 
-      streamRef.current = stream;
-      audioContextRef.current = audioContext;
-      sourceRef.current = source;
-      processorRef.current = processor;
-      samplesRef.current = [];
-      processor.onaudioprocess = (event) => {
-        samplesRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+  const startRecording = () => {
+    try {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) throw new Error("Speech recognition is not supported in this browser.");
+      const recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      transcriptRef.current = "";
+      stoppingRef.current = false;
+      recognition.onresult = (event) => {
+        let transcript = "";
+        for (let index = 0; index < event.results.length; index++) {
+          transcript += event.results[index][0].transcript;
+        }
+        transcriptRef.current = transcript;
       };
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      recognition.onerror = () => {
+        stoppingRef.current = false;
+        setStatusMsg("Browser speech recognition failed. Allow microphone access and try again.");
+        setState("error");
+      };
+      recognition.onend = () => {
+        if (stoppingRef.current) {
+          setState("saving");
+          void saveTranscript().catch((error: unknown) => {
+            setStatusMsg(error instanceof Error ? error.message : "Could not save the voice memo.");
+            setState("error");
+          });
+        }
+      };
+      recognitionRef.current = recognition;
+      recognition.start();
       setStatusMsg("");
       setState("recording");
     } catch (error) {
-      const message = error instanceof DOMException && error.name === "NotAllowedError"
-        ? "Microphone access denied. Allow mic access in browser settings."
-        : "Could not access your microphone. Check that it is connected and try again.";
-      setStatusMsg(message);
+      setStatusMsg(error instanceof Error ? error.message : "Could not start speech recognition.");
       setState("error");
     }
   };
 
-  const stopRecording = async () => {
-    const audioContext = audioContextRef.current;
-    if (!audioContext || !sourceRef.current || !processorRef.current) return;
+  const stopRecording = () => {
+    if (!recognitionRef.current) return;
 
     setState("saving");
     setStatusMsg("");
+    stoppingRef.current = true;
+    recognitionRef.current.stop();
+  /*
 
     try {
       processorRef.current.disconnect();
@@ -130,6 +146,7 @@ export default function VoiceRecorder({ onNewNote }: Props) {
       setStatusMsg(error instanceof Error ? error.message : "Could not transcribe the recording. Please try again.");
       setState("error");
     }
+  */
   };
 
   const reset = () => {
