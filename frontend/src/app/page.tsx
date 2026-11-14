@@ -7,7 +7,7 @@ const features = [
   { icon: "🔍", title: "Semantic Search", desc: "Find anything in seconds using AI-powered similarity search across all your knowledge." },
   { icon: "🧠", title: "Knowledge Graph", desc: "Visualise how your ideas connect. Explore relationships across your entire second brain." },
   { icon: "📚", title: "Spaced Repetition", desc: "Never forget anything again. Our forgetting curve algorithm surfaces notes at the perfect moment." },
-  { icon: "📄", title: "PDF Import", desc: "Upload documents and instantly convert them into searchable, summarisable notes." },
+  { icon: "📄", title: "Document Import", desc: "Upload documents and keep the original file while indexing text for search." },
   { icon: "🌅", title: "Daily Briefing", desc: "Start every day with a personalised briefing of what to review and what to explore next." },
 ];
 

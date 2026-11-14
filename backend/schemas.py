@@ -59,6 +59,8 @@ class NoteUpdate(BaseModel):
 class Note(NoteBase):
     id: int
     user_id: int
+    document_filename: Optional[str] = None
+    document_content_type: Optional[str] = None
     tags: List = []
     last_reviewed_at: Optional[datetime.datetime] = None
     review_count: int = 0

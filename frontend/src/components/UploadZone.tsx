@@ -13,7 +13,6 @@ export default function UploadZone({ onUploadSuccess }: Props) {
   const [error, setError] = useState("");
 
   const handleFile = (f: File) => {
-    if (!f.type.includes("pdf")) { setError("Only PDF files are supported."); return; }
     setFile(f); setError(""); setResult(null);
   };
 
@@ -26,7 +25,7 @@ export default function UploadZone({ onUploadSuccess }: Props) {
     if (!file) return;
     setUploading(true); setError("");
     try {
-      const res = await api.uploadPDF(file);
+      const res = await api.uploadDocument(file);
       setResult(res); setFile(null);
       onUploadSuccess?.();
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Upload failed"); }
@@ -35,9 +34,9 @@ export default function UploadZone({ onUploadSuccess }: Props) {
 
   return (
     <div className="glass" style={{ padding: 32, display: "flex", flexDirection: "column", gap: 20 }}>
-      <h2 style={{ fontWeight: 800, fontSize: 22 }}>📄 Upload PDF</h2>
+      <h2 style={{ fontWeight: 800, fontSize: 22 }}>📄 Upload document</h2>
       <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-        Upload a PDF document — it will be extracted and saved as a searchable note automatically.
+        Your original document is stored securely. Text-based documents and PDFs are also indexed for search.
       </p>
 
       {/* Drop zone */}
@@ -45,7 +44,7 @@ export default function UploadZone({ onUploadSuccess }: Props) {
         onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => document.getElementById("pdf-input")?.click()}
+        onClick={() => document.getElementById("document-input")?.click()}
         style={{
           border: `2px dashed ${isDragging ? "var(--accent-purple)" : file ? "var(--success)" : "var(--glass-border)"}`,
           borderRadius: "var(--radius-lg)", padding: "48px 24px",
@@ -56,12 +55,12 @@ export default function UploadZone({ onUploadSuccess }: Props) {
       >
         <div style={{ fontSize: 48 }}>{file ? "📄" : "⬆️"}</div>
         <div style={{ fontWeight: 600, fontSize: 16, textAlign: "center" }}>
-          {file ? file.name : "Drop your PDF here"}
+          {file ? file.name : "Drop your document here"}
         </div>
         <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
           {file ? `${(file.size / 1024).toFixed(1)} KB` : "or click to browse"}
         </div>
-        <input id="pdf-input" type="file" accept=".pdf" hidden
+        <input id="document-input" type="file" hidden
           onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
       </div>
 
@@ -82,7 +81,7 @@ export default function UploadZone({ onUploadSuccess }: Props) {
 
       {file && !result && (
         <button className="btn-primary" onClick={handleUpload} disabled={uploading} style={{ justifyContent: "center" }}>
-          {uploading ? "Uploading & Extracting…" : `Upload "${file.name}"`}
+          {uploading ? "Uploading…" : `Upload "${file.name}"`}
         </button>
       )}
     </div>

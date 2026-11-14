@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Table, DateTime, LargeBinary
 from sqlalchemy.orm import relationship
 from database import Base
 import datetime
@@ -39,6 +39,9 @@ class Note(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     content = Column(Text)
+    document_data = Column(LargeBinary, nullable=True)
+    document_filename = Column(String, nullable=True)
+    document_content_type = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="notes")
     tags = relationship("Tag", secondary=note_tags, back_populates="notes")

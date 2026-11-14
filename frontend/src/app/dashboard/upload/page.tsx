@@ -9,7 +9,7 @@ export default function UploadPage() {
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Upload PDF</h1>
+        <h1 style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Upload document</h1>
         <p style={{ color: "var(--text-secondary)", fontSize: 16 }}>
           Extract text from documents and add them to your second brain.
         </p>

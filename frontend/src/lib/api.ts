@@ -110,6 +110,8 @@ export interface Note {
   id: number;
   title: string;
   content: string | null;
+  document_filename: string | null;
+  document_content_type: string | null;
   user_id: number;
   tags: unknown[];
   review_count: number;
@@ -182,7 +184,7 @@ export const api = {
   getDailyBriefing: () => request<DailyBriefingData>("/api/daily-briefing"),
 
   // Upload (multipart — special case)
-  uploadPDF: async (file: File) => {
+  uploadDocument: async (file: File) => {
     const token = getToken();
     const formData = new FormData();
     formData.append("file", file);
@@ -202,6 +204,11 @@ export const api = {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+        if (res.status === 401 && token && typeof window !== "undefined") {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          window.location.assign("/auth");
+        }
         throw new Error(err.detail || "Upload failed");
       }
       return res.json();
@@ -212,5 +219,22 @@ export const api = {
       }
       throw new Error(getNetworkErrorMessage(err));
     }
+  },
+
+  downloadDocument: async (noteId: number) => {
+    const token = getToken();
+    const res = await fetch(`${API_URL}/upload/documents/${noteId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Download failed" }));
+      if (res.status === 401 && token && typeof window !== "undefined") {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.assign("/auth");
+      }
+      throw new Error(err.detail || "Download failed");
+    }
+    return res.blob();
   },
 };

@@ -5,6 +5,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, notes, upload, search, summarize, knowledge_graph, daily_briefing, transcribe
 from database import engine
 import models
+from sqlalchemy import inspect, text
+
+
+def migrate_document_columns():
+    """Add document storage columns to databases created before file uploads."""
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("notes")}
+    missing_columns = {
+        "document_data": "LargeBinary",
+        "document_filename": "VARCHAR(255)",
+        "document_content_type": "VARCHAR(255)",
+    }
+    with engine.begin() as connection:
+        for column_name, column_type in missing_columns.items():
+            if column_name not in columns:
+                database_type = "BYTEA" if column_name == "document_data" and not engine.dialect.name == "sqlite" else (
+                    "BLOB" if column_name == "document_data" else column_type
+                )
+                connection.execute(
+                    text(f"ALTER TABLE notes ADD COLUMN {column_name} {database_type}")
+                )
 
 
 @asynccontextmanager
@@ -13,6 +34,7 @@ async def lifespan(app: FastAPI):
     # so a DB hiccup doesn't crash the entire serverless function
     try:
         models.Base.metadata.create_all(bind=engine)
+        migrate_document_columns()
     except Exception as e:
         print(f"Warning: Could not create tables on startup: {e}")
     yield

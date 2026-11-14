@@ -13,6 +13,7 @@ function parseBackendDate(dateStr: string): Date {
 export default function NoteView({ note, onClose }: Props) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [strength] = useState(Math.random() * 0.7 + 0.1); // placeholder
 
   const handleSummarize = async () => {
@@ -23,6 +24,21 @@ export default function NoteView({ note, onClose }: Props) {
       setSummary(res.summary);
     } catch { setSummary("Could not generate summary — AI service may be offline."); }
     finally { setLoading(false); }
+  };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const blob = await api.downloadDocument(note.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = note.document_filename || "document";
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const strengthPct = Math.round(strength * 100);
@@ -91,6 +107,11 @@ export default function NoteView({ note, onClose }: Props) {
 
         {/* Actions */}
         <div style={{ padding: "16px 24px", borderTop: "1px solid var(--glass-border)", display: "flex", gap: 12 }}>
+          {note.document_filename && (
+            <button className="btn-ghost" onClick={handleDownload} disabled={downloading}>
+              {downloading ? "Downloading..." : "Download document"}
+            </button>
+          )}
           <button className="btn-primary" onClick={handleSummarize} disabled={loading} style={{ flex: 1, justifyContent: "center" }}>
             {loading ? (
               <><span style={{ animation: "spin-slow 1s linear infinite", display: "inline-block" }}>⟳</span> Summarising...</>

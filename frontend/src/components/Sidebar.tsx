@@ -10,7 +10,7 @@ const navItems = [
   { href: "/dashboard/graph", icon: "🧠", label: "Knowledge Graph" },
   { href: "/dashboard/briefing", icon: "🌅", label: "Daily Briefing" },
   { href: "/dashboard/voice", icon: "🎤", label: "Voice Memos" },
-  { href: "/dashboard/upload", icon: "📤", label: "Upload PDF" },
+  { href: "/dashboard/upload", icon: "📤", label: "Upload document" },
 ];
 
 export default function Sidebar() {
